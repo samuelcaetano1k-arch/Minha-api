@@ -2,6 +2,7 @@ import os
 import json
 import uuid
 import httpx
+import urllib.parse
 from datetime import datetime
 from typing import Optional
 
@@ -74,10 +75,6 @@ class RoomResponse(BaseModel):
 # =========================================================
 # PROVIDER
 # =========================================================
-class RoomProvider:
-
-    name = "ff-custom-room-api"
-
     async def create_room(self, room_data):
 
         modo = room_data.get("mode")
@@ -106,7 +103,10 @@ class RoomProvider:
                 "message": "Rodadas disponíveis: 7 ou 13."
             }
 
-        if configuracao not in ["limited_ammo", "unlimited_ammo"]:
+        if configuracao not in [
+            "limited_ammo",
+            "unlimited_ammo"
+        ]:
             return {
                 "success": False,
                 "message": "Configuração inválida."
@@ -115,30 +115,64 @@ class RoomProvider:
         url = (
             "https://ff-custom-room-api-1.onrender.com"
             f"/create_room/{modo_nome}/{rodadas}/"
-            f"{configuracao}/{nome}/{senha}"
+            f"{configuracao}/{urllib.parse.quote(str(nome), safe='')}/"
+            f"{urllib.parse.quote(str(senha), safe='')}"
         )
 
         try:
+
             async with httpx.AsyncClient(timeout=30) as client:
                 response = await client.get(url)
+
+            texto = response.text
 
             if response.status_code != 200:
                 return {
                     "success": False,
                     "message": f"API retornou HTTP {response.status_code}",
-                    "response": response.text
+                    "response": texto
                 }
 
-            resultado = response.json()
+            try:
+                resultado = response.json()
+            except Exception:
+                return {
+                    "success": False,
+                    "message": "A API externa não retornou JSON.",
+                    "response": texto
+                }
+
+            if not isinstance(resultado, dict):
+                return {
+                    "success": False,
+                    "message": "Resposta inválida da API.",
+                    "response": texto
+                }
+
+            room_id = resultado.get("room_id")
+
+            if not room_id:
+                return {
+                    "success": False,
+                    "message": "A API não retornou room_id.",
+                    "response": texto
+                }
 
             return {
                 "success": True,
-                "external_room_id": str(resultado.get("room_id")),
+                "external_room_id": str(room_id),
                 "message": "Sala criada com sucesso.",
-                "room_id": resultado.get("room_id"),
+                "room_id": room_id,
                 "host_uid": resultado.get("host_uid"),
                 "password": resultado.get("password"),
                 "room_name": resultado.get("room_name")
+            }
+
+        except Exception as erro:
+
+            return {
+                "success": False,
+                "message": str(erro)
             }
 
         except Exception as erro:
