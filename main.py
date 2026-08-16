@@ -1,7 +1,7 @@
 import os
 import json
 import uuid
-
+import httpx
 from datetime import datetime
 from typing import Optional
 
@@ -56,7 +56,6 @@ class RoomRequest(BaseModel):
     configuration: str = Field(default="padrão")
     start_delay_minutes: int = Field(default=0, ge=0)
 
-
 class RoomResponse(BaseModel):
     id: str
     room_name: str
@@ -75,41 +74,93 @@ class RoomResponse(BaseModel):
 # =========================================================
 # PROVIDER
 # =========================================================
-
 class RoomProvider:
 
-    name = "local"
+    name = "ff-custom-room-api"
 
-    def create_room(self, room_data):
+    async def create_room(self, room_data):
 
-        # ATENÇÃO:
-        # Atualmente isso NÃO cria uma sala real no Free Fire.
-        # Apenas cria uma sala no banco da nossa API.
+        modo = room_data.get("mode")
+        rodadas = room_data.get("rounds")
+        configuracao = room_data.get("configuration")
+        nome = room_data.get("room_name")
+        senha = room_data.get("password")
 
-        return {
-            "success": True,
-            "external_room_id": None,
-            "message": "Sala criada localmente."
+        modos = {
+            1: "1v1",
+            4: "4v4",
+            6: "6v6"
         }
 
-    def start_room(self, room_data):
+        modo_nome = modos.get(modo)
 
+        if not modo_nome:
+            return {
+                "success": False,
+                "message": "Modo inválido."
+            }
+
+        if rodadas not in [7, 13]:
+            return {
+                "success": False,
+                "message": "Rodadas disponíveis: 7 ou 13."
+            }
+
+        if configuracao not in ["limited_ammo", "unlimited_ammo"]:
+            return {
+                "success": False,
+                "message": "Configuração inválida."
+            }
+
+        url = (
+            "https://ff-custom-room-api-1.onrender.com"
+            f"/create_room/{modo_nome}/{rodadas}/"
+            f"{configuracao}/{nome}/{senha}"
+        )
+
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                response = await client.get(url)
+
+            if response.status_code != 200:
+                return {
+                    "success": False,
+                    "message": f"API retornou HTTP {response.status_code}",
+                    "response": response.text
+                }
+
+            resultado = response.json()
+
+            return {
+                "success": True,
+                "external_room_id": str(resultado.get("room_id")),
+                "message": "Sala criada com sucesso.",
+                "room_id": resultado.get("room_id"),
+                "host_uid": resultado.get("host_uid"),
+                "password": resultado.get("password"),
+                "room_name": resultado.get("room_name")
+            }
+
+        except Exception as erro:
+            return {
+                "success": False,
+                "message": str(erro)
+            }
+
+    async def start_room(self, room_data):
         return {
             "success": True,
             "message": "Sala iniciada."
         }
 
-    def finish_room(self, room_data):
-
+    async def finish_room(self, room_data):
         return {
             "success": True,
             "message": "Sala finalizada."
         }
 
 
-provider = RoomProvider()
-
-
+provider = RoomProvider()    
 # =========================================================
 # HOME
 # =========================================================
@@ -143,7 +194,7 @@ def health():
 # =========================================================
 
 @app.post("/rooms", response_model=RoomResponse)
-def criar_sala(dados: RoomRequest):
+async def criar_sala(dados: RoomRequest):
 
     salas = carregar_salas()
 
@@ -160,7 +211,7 @@ def criar_sala(dados: RoomRequest):
         "start_delay_minutes": dados.start_delay_minutes
     }
 
-    resultado = provider.create_room(room_data)
+    resultado = await provider.create_room(room_data)
 
     if not resultado.get("success"):
         raise HTTPException(
