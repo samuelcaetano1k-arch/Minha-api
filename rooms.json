@@ -1,0 +1,41 @@
+[
+    {
+        "id": "5fda31fb",
+        "room_name": "Sala Teste",
+        "password": "1234",
+        "mode": 1,
+        "map_name": "Bermuda",
+        "start_delay_minutes": 5,
+        "status": "created",
+        "created_at": "2026-08-16T00:03:53.645686"
+    },
+    {
+        "id": "7cdd3ec9",
+        "room_name": "4x4 Padrão",
+        "password": "1234",
+        "mode": 4,
+        "rounds": 13,
+        "map_name": "Bermuda",
+        "configuration": "padrão",
+        "start_delay_minutes": 0,
+        "status": "started",
+        "provider": "local",
+        "external_room_id": null,
+        "created_at": "2026-08-16T15:34:43.559623",
+        "started_at": "2026-08-16T15:35:50.594285"
+    },
+    {
+        "id": "9de94c9b",
+        "room_name": "4x4 Padrão",
+        "password": "1234",
+        "mode": 1,
+        "rounds": 13,
+        "map_name": "Bermuda",
+        "configuration": "padrão",
+        "start_delay_minutes": 0,
+        "status": "created",
+        "provider": "local",
+        "external_room_id": null,
+        "created_at": "2026-08-16T16:09:54.526764"
+    }
+]

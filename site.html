@@ -1,0 +1,202 @@
+l<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Salas FF</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #111;
+            color: white;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 450px;
+            margin: auto;
+        }
+
+        h1 {
+            text-align: center;
+        }
+
+        .card {
+            background: #1d1d1d;
+            padding: 20px;
+            border-radius: 15px;
+        }
+
+        label {
+            display: block;
+            margin-top: 15px;
+            margin-bottom: 5px;
+        }
+
+        input, select, button {
+            width: 100%;
+            padding: 13px;
+            box-sizing: border-box;
+            border-radius: 8px;
+            border: none;
+            margin-bottom: 10px;
+        }
+
+        button {
+            background: #ff8a00;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 15px;
+        }
+
+        #resultado {
+            display: none;
+            margin-top: 20px;
+            background: #292929;
+            padding: 15px;
+            border-radius: 10px;
+        }
+
+        .erro {
+            color: #ff5555;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>🎮 Salas FF</h1>
+
+    <div class="card">
+
+        <label>Modo</label>
+
+        <select id="modo">
+            <option value="1">4x4 Padrão</option>
+            <option value="2">4x4 Full Ouro</option>
+            <option value="3">X1 Gelo</option>
+        </select>
+
+        <label>Senha da sala</label>
+
+        <input
+            id="senha"
+            type="text"
+            value="99"
+            maxlength="20"
+        >
+
+        <button onclick="criarSala()">
+            🎮 CRIAR SALA
+        </button>
+
+        <div id="resultado"></div>
+
+    </div>
+
+</div>
+
+<script>
+
+async function criarSala() {
+
+    const resultado = document.getElementById("resultado");
+
+    resultado.style.display = "block";
+
+    resultado.innerHTML = "⏳ Criando sala...";
+
+    const modo = document.getElementById("modo").value;
+    const senha = document.getElementById("senha").value;
+
+    try {
+
+        const resposta = await fetch("/rooms", {
+
+            method: "POST",
+
+            headers: {
+                "Content-Type": "application/json"
+            },
+
+            body: JSON.stringify({
+                modo: Number(modo),
+                senha: senha
+            })
+
+        });
+
+        const data = await resposta.json();
+
+        if (!resposta.ok) {
+
+            resultado.innerHTML =
+                `<div class="erro">
+                    ❌ Erro ao criar sala
+                    <br><br>
+                    ${JSON.stringify(data)}
+                </div>`;
+
+            return;
+        }
+
+        const r = data.resultado || data;
+
+        const id =
+            r.salaid ||
+            r.room_id ||
+            r.roomId ||
+            r.id;
+
+        const senhaSala =
+            r.senha ||
+            r.password ||
+            senha;
+
+        resultado.innerHTML = `
+            <h3>🎉 Sala criada!</h3>
+
+            <p>
+                🆔 <b>ID:</b><br>
+                <span>${id || "Não informado"}</span>
+            </p>
+
+            <p>
+                🔐 <b>Senha:</b><br>
+                <span>${senhaSala}</span>
+            </p>
+
+            <button onclick="copiar('${id || ""}')">
+                📋 COPIAR ID
+            </button>
+        `;
+
+    } catch (erro) {
+
+        resultado.innerHTML =
+            `<div class="erro">
+                ❌ Não foi possível conectar à API.
+            </div>`;
+
+        console.error(erro);
+    }
+}
+
+
+function copiar(texto) {
+
+    navigator.clipboard.writeText(texto);
+
+    alert("ID copiado!");
+
+}
+
+</script>
+
+</body>
+</html>

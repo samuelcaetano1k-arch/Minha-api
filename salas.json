@@ -1,0 +1,16 @@
+[
+    {
+        "id": "66a2769b",
+        "room_name": "Sala Teste",
+        "password": "1234",
+        "mode": 4,
+        "rounds": 13,
+        "map_name": "Bermuda",
+        "configuration": "padrão",
+        "start_delay_minutes": 0,
+        "status": "created",
+        "provider": "local",
+        "external_room_id": null,
+        "created_at": "2026-08-16T16:34:36.820661"
+    }
+]
