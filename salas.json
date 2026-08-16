@@ -12,5 +12,19 @@
         "provider": "local",
         "external_room_id": null,
         "created_at": "2026-08-16T16:34:36.820661"
+    },
+    {
+        "id": "729009fa",
+        "room_name": "Teste",
+        "password": "1234",
+        "mode": 4,
+        "rounds": 7,
+        "map_name": "Bermuda",
+        "configuration": "limited_ammo",
+        "start_delay_minutes": 0,
+        "status": "created",
+        "provider": "ff-custom-room-api",
+        "external_room_id": "84388237",
+        "created_at": "2026-08-16T19:24:43.338293"
     }
 ]

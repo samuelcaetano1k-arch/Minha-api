@@ -1,445 +1,615 @@
 import os
-from urllib.parse import quote
-
-import discord
+import urllib.parse
 import httpx
 
-from discord.ext import commands
 from dotenv import load_dotenv
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+)
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    CallbackQueryHandler,
+    MessageHandler,
+    ContextTypes,
+    filters,
+)
 
 load_dotenv()
 
 # =========================================================
 # CONFIGURAÇÃO
 # =========================================================
-import os
 
-TOKEN = os.getenv("DISCORD_TOKEN")
+TELEGRAM_TOKEN = "8690089353:AAEC5pTCg5FDVev2DWqRdDjnWGluEgHvGms"
 
 API_BASE = os.getenv(
     "ROOM_API_URL",
     "https://ff-custom-room-api-1.onrender.com"
 ).rstrip("/")
 
-# Guarda a última sala criada em cada canal
+# Guarda dados temporários por usuário
+usuarios = {}
+
+# Guarda a última sala criada por usuário
 salas_ativas = {}
 
 
 # =========================================================
-# DISCORD
+# TECLADO PRINCIPAL
 # =========================================================
 
-intents = discord.Intents.default()
-intents.message_content = True
+def painel():
+    keyboard = [
+        [
+            InlineKeyboardButton("🎮 Criar Sala", callback_data="criar")
+        ],
+        [
+            InlineKeyboardButton("👥 Listar Jogadores", callback_data="listar")
+        ],
+        [
+            InlineKeyboardButton("▶️ Iniciar Sala", callback_data="iniciar")
+        ],
+        [
+            InlineKeyboardButton("🔒 Fechar Sala", callback_data="fechar")
+        ],
+    ]
 
-bot = commands.Bot(
-    command_prefix="!",
-    intents=intents
-)
-
-
-# =========================================================
-# EVENTO BOT ONLINE
-# =========================================================
-
-@bot.event
-async def on_ready():
-    print(f"Bot online: {bot.user}")
-    print(f"API: {API_BASE}")
-
-
-# =========================================================
-# TESTE
-# =========================================================
-
-@bot.command()
-async def ping(ctx):
-    await ctx.send("🏓 Pong!")
+    return InlineKeyboardMarkup(keyboard)
 
 
 # =========================================================
-# CRIAR SALA
-#
-# !sala
-# !sala 4v4
-# !sala 4v4 13
-# !sala 4v4 13 1234
-# !sala 4v4 13 1234 Minha Sala
+# /start
 # =========================================================
 
-@bot.command()
-async def sala(ctx, modo: str = "4v4", rodadas: int = 7,
-               senha: str = "1234", *, nome: str = "Sala Free Fire"):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    # -----------------------------------------------------
-    # Verifica rodadas
-    # -----------------------------------------------------
+    texto = (
+        "🎮 **PAINEL DE SALAS**\n\n"
+        "Escolha uma opção abaixo:"
+    )
 
-    if rodadas < 1:
-        await ctx.send("❌ A quantidade de rodadas precisa ser maior que 0.")
+    await update.message.reply_text(
+        texto,
+        parse_mode="Markdown",
+        reply_markup=painel()
+    )
+
+
+# =========================================================
+# ESCOLHER MODO
+# =========================================================
+
+async def mostrar_modos(query):
+
+    keyboard = [
+        [
+            InlineKeyboardButton("🔫 1v1", callback_data="modo_1v1")
+        ],
+        [
+            InlineKeyboardButton("🔥 4v4", callback_data="modo_4v4")
+        ],
+        [
+            InlineKeyboardButton("⚡ 6v6", callback_data="modo_6v6")
+        ],
+        [
+            InlineKeyboardButton("👊 4v4 Soco", callback_data="modo_soco")
+        ],
+        [
+            InlineKeyboardButton("🏆 4v4 eSports", callback_data="modo_esports")
+        ],
+        [
+            InlineKeyboardButton("⬅️ Voltar", callback_data="voltar")
+        ],
+    ]
+
+    await query.edit_message_text(
+        "🎮 **ESCOLHA O MODO**",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+# =========================================================
+# ESCOLHER RODADAS
+# =========================================================
+
+async def mostrar_rodadas(query, user_id):
+
+    dados = usuarios.setdefault(user_id, {})
+
+    if dados.get("tipo") in ["soco", "esports"]:
+        dados["rodadas"] = 13
+        dados["configuracao"] = (
+            "fist_fight"
+            if dados["tipo"] == "soco"
+            else "tactical"
+        )
+
+        await pedir_nome(query, user_id)
         return
 
-    # -----------------------------------------------------
-    # Converte modo
-    # -----------------------------------------------------
+    keyboard = [
+        [
+            InlineKeyboardButton("7️⃣ 7 Rodadas", callback_data="rodadas_7")
+        ],
+        [
+            InlineKeyboardButton("1️⃣3️⃣ 13 Rodadas", callback_data="rodadas_13")
+        ],
+        [
+            InlineKeyboardButton("⬅️ Voltar", callback_data="criar")
+        ],
+    ]
 
-    modos = {
-        "1v1": 1,
-        "2v2": 2,
-        "3v3": 3,
-        "4v4": 4,
-        "5v5": 5,
-    }
+    await query.edit_message_text(
+        "🔄 **QUANTIDADE DE RODADAS**",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
-    modo_numero = modos.get(modo.lower())
 
-    if modo_numero is None:
+# =========================================================
+# ESCOLHER GELO
+# =========================================================
 
-        # Também permite mandar diretamente um número
+async def mostrar_gelo(query):
+
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                "🧊 Gelo Limitado",
+                callback_data="gelo_limited"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                "♾️ Gelo Infinito",
+                callback_data="gelo_unlimited"
+            )
+        ],
+        [
+            InlineKeyboardButton("⬅️ Voltar", callback_data="criar")
+        ],
+    ]
+
+    await query.edit_message_text(
+        "🧊 **ESCOLHA O TIPO DE GELO**",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+# =========================================================
+# PEDIR NOME
+# =========================================================
+
+async def pedir_nome(query, user_id):
+
+    usuarios[user_id]["esperando"] = "nome"
+
+    await query.edit_message_text(
+        "📝 **Digite o nome da sala:**",
+        parse_mode="Markdown"
+    )
+
+
+# =========================================================
+# PEDIR SENHA
+# =========================================================
+
+async def pedir_senha(message, user_id):
+
+    usuarios[user_id]["esperando"] = "senha"
+
+    await message.reply_text(
+        "🔐 **Digite a senha da sala:**",
+        parse_mode="Markdown"
+    )
+
+
+# =========================================================
+# CRIAR SALA NA API
+# =========================================================
+async def criar_sala_api(user_id, message):
+
+    dados = usuarios[user_id]
+
+    nome = dados["nome"]
+    senha = dados["senha"]
+
+    nome_url = urllib.parse.quote(nome, safe="")
+    senha_url = urllib.parse.quote(senha, safe="")
+
+    endpoint = (
+        f"/create_room/4v4/7/limited_ammo/"
+        f"{nome_url}/{senha_url}"
+    )
+
+    url = API_BASE + endpoint
+
+    print("URL ENVIADA PELO BOT:", url)
+
+    await message.reply_text(
+        "⏳ **CRIANDO SALA 4V4...**",
+        parse_mode="Markdown"
+    )
+
+    try:
+
+        async with httpx.AsyncClient(timeout=60) as client:
+            resposta = await client.get(url)
+
+        texto = resposta.text
+
+        if resposta.status_code >= 400:
+            await message.reply_text(
+                "❌ **ERRO AO CRIAR SALA**\n\n"
+                f"HTTP: `{resposta.status_code}`\n"
+                f"Resposta: `{texto[:1500]}`",
+                parse_mode="Markdown"
+            )
+            return
+
         try:
-            modo_numero = int(modo)
-        except ValueError:
-            await ctx.send(
-                "❌ Modo inválido.\n"
-                "Use, por exemplo: `!sala 4v4 13`"
+            resultado = resposta.json()
+        except Exception:
+            resultado = None
+
+        if not isinstance(resultado, dict):
+            await message.reply_text(
+                "❌ **A API não retornou JSON válido.**\n\n"
+                f"📡 Resposta:\n`{texto[:1500]}`",
+                parse_mode="Markdown"
             )
             return
 
+        room_id = resultado.get("room_id")
+
+        if not room_id:
+            await message.reply_text(
+                "❌ **A API não criou a sala.**\n\n"
+                f"📡 Resposta da API:\n`{texto[:1500]}`",
+                parse_mode="Markdown"
+            )
+            return
+
+        room_password = resultado.get("password", senha)
+        host_uid = resultado.get("host_uid", "Não informado")
+        room_name = resultado.get("room_name", nome)
+
+        salas_ativas[user_id] = {
+            "id": room_id,
+            "nome": room_name,
+            "senha": room_password,
+            "modo": "4v4",
+            "rodadas": 7
+        }
+
+        await message.reply_text(
+            "🎉 **SALA CRIADA COM SUCESSO!**\n\n"
+            f"📝 Nome: `{room_name}`\n"
+            "🎮 Modo: `4v4`\n"
+            "🔄 Rodadas: `7`\n"
+            "🧊 Gelo: `Limitado`\n"
+            f"🆔 ID: `{room_id}`\n"
+            f"🔑 Senha: `{room_password}`\n"
+            f"👤 Host UID: `{host_uid}`",
+            parse_mode="Markdown"
+        )
+
+    except Exception as erro:
+
+        await message.reply_text(
+            "❌ **ERRO AO CONECTAR À API**\n\n"
+            f"`{erro}`",
+            parse_mode="Markdown"
+        )
+
+
+
+
+# =========================================================
+# BOTÕES
+# =========================================================
+
+async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    query = update.callback_query
+    await query.answer()
+
+    user_id = query.from_user.id
+    data = query.data
+
     # -----------------------------------------------------
-    # Mensagem aguardando
+    # VOLTAR
     # -----------------------------------------------------
 
-    mensagem = await ctx.send(
-        "⏳ **CRIANDO SALA...**\n"
-        f"🎮 Modo: `{modo}`\n"
-        f"🔄 Rodadas: `{rodadas}`"
-    )
+    if data == "voltar":
+
+        await query.edit_message_text(
+            "🎮 **PAINEL DE SALAS**",
+            parse_mode="Markdown",
+            reply_markup=painel()
+        )
+
+        return
 
     # -----------------------------------------------------
-    # Dados enviados para a API
+    # CRIAR
     # -----------------------------------------------------
 
-    dados = {
-        "room_name": nome,
-        "password": senha,
-        "mode": modo_numero,
-        "rounds": rodadas,
-        "map_name": "Bermuda",
-        "configuration": "padrão",
-        "start_delay_minutes": 0
-    }
+    if data == "criar":
+
+        usuarios[user_id] = {}
+
+        await mostrar_modos(query)
+
+        return
 
     # -----------------------------------------------------
-    # Chamada da API
+    # MODO
     # -----------------------------------------------------
 
-    try:
+    if data.startswith("modo_"):
 
-        async with httpx.AsyncClient(timeout=30) as client:
+        modo = data.replace("modo_", "")
 
-            resposta = await client.post(
-                f"{API_BASE}/rooms",
-                json=dados
+        dados = usuarios.setdefault(user_id, {})
+
+        if modo == "soco":
+
+            dados["tipo"] = "soco"
+            dados["modo"] = "4v4"
+
+        elif modo == "esports":
+
+            dados["tipo"] = "esports"
+            dados["modo"] = "4v4"
+
+        else:
+
+            dados["tipo"] = "normal"
+            dados["modo"] = modo
+
+        await mostrar_rodadas(query, user_id)
+
+        return
+
+    # -----------------------------------------------------
+    # RODADAS
+    # -----------------------------------------------------
+
+    if data.startswith("rodadas_"):
+
+        rodadas = int(data.replace("rodadas_", ""))
+
+        usuarios[user_id]["rodadas"] = rodadas
+
+        await mostrar_gelo(query)
+
+        return
+
+    # -----------------------------------------------------
+    # GELO
+    # -----------------------------------------------------
+
+    if data == "gelo_limited":
+
+        usuarios[user_id]["configuracao"] = "limited_ammo"
+
+        await pedir_nome(query, user_id)
+
+        return
+
+    if data == "gelo_unlimited":
+
+        usuarios[user_id]["configuracao"] = "unlimited_ammo"
+
+        await pedir_nome(query, user_id)
+
+        return
+
+    # -----------------------------------------------------
+    # LISTAR
+    # -----------------------------------------------------
+
+    if data == "listar":
+
+        sala = salas_ativas.get(user_id)
+
+        if not sala or not sala.get("id"):
+
+            await query.message.reply_text(
+                "❌ Nenhuma sala criada recentemente."
             )
 
-        # -------------------------------------------------
-        # Erro HTTP
-        # -------------------------------------------------
+            return
 
-        if resposta.status_code != 200:
+        room_id = sala["id"]
 
-            try:
-                erro = resposta.json()
-            except Exception:
-                erro = resposta.text
+        try:
 
-            await mensagem.edit(
-                content=(
-                    "❌ **ERRO AO CRIAR SALA**\n\n"
-                    f"Status: `{resposta.status_code}`\n"
-                    f"Resposta: `{erro}`"
+            async with httpx.AsyncClient(timeout=30) as client:
+
+                resposta = await client.get(
+                    f"{API_BASE}/list/{room_id}"
                 )
+
+            await query.message.reply_text(
+                "👥 **JOGADORES DA SALA**\n\n"
+                f"{resposta.text[:3000]}",
+                parse_mode="Markdown"
             )
+
+        except Exception as erro:
+
+            await query.message.reply_text(
+                f"❌ Erro: `{erro}`",
+                parse_mode="Markdown"
+            )
+
+        return
+
+    # -----------------------------------------------------
+    # INICIAR
+    # -----------------------------------------------------
+
+    if data == "iniciar":
+
+        try:
+
+            async with httpx.AsyncClient(timeout=30) as client:
+
+                resposta = await client.get(
+                    f"{API_BASE}/start"
+                )
+
+            await query.message.reply_text(
+                "▶️ **COMANDO DE INÍCIO ENVIADO**\n\n"
+                f"Resposta: `{resposta.text[:1500]}`",
+                parse_mode="Markdown"
+            )
+
+        except Exception as erro:
+
+            await query.message.reply_text(
+                f"❌ Erro: `{erro}`",
+                parse_mode="Markdown"
+            )
+
+        return
+
+    # -----------------------------------------------------
+    # FECHAR
+    # -----------------------------------------------------
+
+    if data == "fechar":
+
+        sala = salas_ativas.get(user_id)
+
+        if not sala or not sala.get("id"):
+
+            await query.message.reply_text(
+                "❌ Nenhuma sala encontrada."
+            )
+
             return
 
-        resultado = resposta.json()
+        room_id = sala["id"]
 
-    except httpx.RequestError as erro:
+        try:
 
-        await mensagem.edit(
-            content=(
-                "❌ **NÃO FOI POSSÍVEL CONECTAR À API**\n\n"
-                f"`{erro}`"
+            async with httpx.AsyncClient(timeout=30) as client:
+
+                resposta = await client.get(
+                    f"{API_BASE}/disband/{room_id}"
+                )
+
+            await query.message.reply_text(
+                "🔒 **SALA FECHADA**\n\n"
+                f"Resposta: `{resposta.text[:1500]}`",
+                parse_mode="Markdown",
+                reply_markup=painel()
             )
-        )
+
+            salas_ativas.pop(user_id, None)
+
+        except Exception as erro:
+
+            await query.message.reply_text(
+                f"❌ Erro: `{erro}`",
+                parse_mode="Markdown"
+            )
+
         return
 
-    except Exception as erro:
 
-        await mensagem.edit(
-            content=(
-                "❌ **ERRO**\n\n"
-                f"`{erro}`"
-            )
-        )
+# =========================================================
+# MENSAGENS DE TEXTO
+# =========================================================
+
+async def mensagens(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not update.message:
+        return
+
+    user_id = update.effective_user.id
+
+    if user_id not in usuarios:
+        return
+
+    dados = usuarios[user_id]
+
+    esperando = dados.get("esperando")
+
+    # -----------------------------------------------------
+    # NOME
+    # -----------------------------------------------------
+
+    if esperando == "nome":
+
+        dados["nome"] = update.message.text.strip()
+        dados["esperando"] = None
+
+        await pedir_senha(update.message, user_id)
+
         return
 
     # -----------------------------------------------------
-    # Dados retornados
+    # SENHA
     # -----------------------------------------------------
 
-    room_id = resultado.get("external_room_id")
+    if esperando == "senha":
 
-    # Se não existir ID externo, usa o ID interno
-    if not room_id:
-        room_id = resultado.get("id", "Não informado")
+        dados["senha"] = update.message.text.strip()
+        dados["esperando"] = None
 
-    room_password = resultado.get(
-        "password",
-        senha
-    )
-
-    # -----------------------------------------------------
-    # Guarda sala no canal
-    # -----------------------------------------------------
-
-    salas_ativas[ctx.channel.id] = resultado
-
-    # -----------------------------------------------------
-    # Embed
-    # -----------------------------------------------------
-
-    embed = discord.Embed(
-        title="🎮 SALA CRIADA!",
-        description="Sua sala foi criada com sucesso.",
-        color=discord.Color.green()
-    )
-
-    embed.add_field(
-        name="🆔 ID da Sala",
-        value=f"`{room_id}`",
-        inline=False
-    )
-
-    embed.add_field(
-        name="🔑 Senha",
-        value=f"`{room_password}`",
-        inline=True
-    )
-
-    embed.add_field(
-        name="🎮 Modo",
-        value=f"`{modo}`",
-        inline=True
-    )
-
-    embed.add_field(
-        name="🔄 Rodadas",
-        value=f"`{rodadas}`",
-        inline=True
-    )
-
-    embed.add_field(
-        name="🗺️ Mapa",
-        value=f"`{dados['map_name']}`",
-        inline=True
-    )
-
-    embed.add_field(
-        name="⚙️ Configuração",
-        value=f"`{dados['configuration']}`",
-        inline=True
-    )
-
-    embed.set_footer(
-        text=f"Criada por {ctx.author}"
-    )
-
-    await mensagem.edit(
-        content=None,
-        embed=embed
-    )
-
-
-# =========================================================
-# VER ÚLTIMA SALA
-#
-# !minhasala
-# =========================================================
-
-@bot.command()
-async def minhasala(ctx):
-
-    sala = salas_ativas.get(ctx.channel.id)
-
-    if not sala:
-        await ctx.send(
-            "❌ Não existe uma sala criada recentemente neste canal."
-        )
-        return
-
-    room_id = sala.get(
-        "external_room_id"
-    ) or sala.get("id")
-
-    embed = discord.Embed(
-        title="🎮 ÚLTIMA SALA",
-        color=discord.Color.blue()
-    )
-
-    embed.add_field(
-        name="🆔 ID",
-        value=f"`{room_id}`",
-        inline=False
-    )
-
-    embed.add_field(
-        name="🔑 Senha",
-        value=f"`{sala.get('password', 'Não informado')}`",
-        inline=True
-    )
-
-    embed.add_field(
-        name="🔄 Rodadas",
-        value=f"`{sala.get('rounds', '?')}`",
-        inline=True
-    )
-
-    embed.add_field(
-        name="🗺️ Mapa",
-        value=f"`{sala.get('map_name', '?')}`",
-        inline=True
-    )
-
-    await ctx.send(embed=embed)
-
-
-# =========================================================
-# INICIAR SALA
-#
-# !iniciarsala
-# =========================================================
-
-@bot.command()
-async def iniciarsala(ctx):
-
-    sala = salas_ativas.get(ctx.channel.id)
-
-    if not sala:
-        await ctx.send("❌ Nenhuma sala encontrada neste canal.")
-        return
-
-    room_id = sala.get("id")
-
-    if not room_id:
-        await ctx.send("❌ ID interno da sala não encontrado.")
-        return
-
-    try:
-
-        async with httpx.AsyncClient(timeout=30) as client:
-
-            resposta = await client.post(
-                f"{API_BASE}/rooms/{room_id}/start"
-            )
-
-        if resposta.status_code != 200:
-            await ctx.send(
-                f"❌ Erro ao iniciar sala: `{resposta.status_code}`"
-            )
-            return
-
-        await ctx.send("▶️ **SALA INICIADA!**")
-
-    except Exception as erro:
-
-        await ctx.send(
-            f"❌ Erro ao conectar à API: `{erro}`"
+        await criar_sala_api(
+            user_id,
+            update.message
         )
 
-
-# =========================================================
-# FINALIZAR SALA
-#
-# !finalizarsala
-# =========================================================
-
-@bot.command()
-async def finalizarsala(ctx):
-
-    sala = salas_ativas.get(ctx.channel.id)
-
-    if not sala:
-        await ctx.send("❌ Nenhuma sala encontrada neste canal.")
         return
 
-    room_id = sala.get("id")
 
-    if not room_id:
-        await ctx.send("❌ ID interno da sala não encontrado.")
-        return
+# =========================================================
+# MAIN
+# =========================================================
 
-    try:
+def main():
 
-        async with httpx.AsyncClient(timeout=30) as client:
+    if not TELEGRAM_TOKEN:
 
-            resposta = await client.post(
-                f"{API_BASE}/rooms/{room_id}/finish"
-            )
-
-        if resposta.status_code != 200:
-            await ctx.send(
-                f"❌ Erro ao finalizar sala: `{resposta.status_code}`"
-            )
-            return
-
-        await ctx.send("🏁 **SALA FINALIZADA!**")
-
-    except Exception as erro:
-
-        await ctx.send(
-            f"❌ Erro ao conectar à API: `{erro}`"
+        raise RuntimeError(
+            "TELEGRAM_TOKEN não configurado."
         )
 
+    print("🤖 Bot Telegram iniciado!")
+    print(f"🌐 API: {API_BASE}")
 
-# =========================================================
-# ERROS DE COMANDO
-# =========================================================
+    app = Application.builder().token(
+        TELEGRAM_TOKEN
+    ).build()
 
-@bot.event
-async def on_command_error(ctx, error):
-
-    if isinstance(error, commands.CommandNotFound):
-        return
-
-    if isinstance(error, commands.MissingRequiredArgument):
-
-        await ctx.send(
-            "❌ Argumento faltando.\n\n"
-            "Exemplo:\n"
-            "`!sala 4v4 13`"
-        )
-        return
-
-    if isinstance(error, commands.BadArgument):
-
-        await ctx.send(
-            "❌ Quantidade de rodadas inválida.\n"
-            "Exemplo: `!sala 4v4 13`"
-        )
-        return
-
-    print(f"Erro no comando {ctx.command}: {error}")
-
-
-# =========================================================
-# INICIAR BOT
-# =========================================================
-
-if not DISCORD_TOKEN:
-
-    raise RuntimeError(
-        "DISCORD_TOKEN não configurado."
+    app.add_handler(
+        CommandHandler("start", start)
     )
 
-bot.run(DISCORD_TOKEN)
+    app.add_handler(
+        CallbackQueryHandler(botoes)
+    )
+
+    app.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            mensagens
+        )
+    )
+
+    app.run_polling()
+
+
+if __name__ == "__main__":
+    main()
